@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Holistika Time Clock</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
+<script>
+/* =====================  SETTINGS: paste your two Supabase codes here  ===================== */
+const SUPABASE_URL      = 'https://nkjyqlitsuuzbtjrvgbd.supabase.co';        // looks like https://abcdefgh.supabase.co
+const SUPABASE_ANON_KEY = 'sb_publishable_dahuQiAZOmAy4Eh8i2NxjQ_MpijTK19';    // the long "anon public" (or "publishable") key
+const PAY_PERIOD_START  = '2026-09-28';  // the first day of ANY past pay period (ask PayEntry). Pay periods are every 2 weeks.
+/* ========================================================================================== */
+</script>
+<style>
+:root{
+  --bg:#F5F6F4; --surface:#FFFFFF; --panel:#ECEDEE; --line:#D9DADD;
+  --fg:#484646; --muted:#6F6C6B; --green:#5C7E5D; --green-ink:#4A6A4B; --terra:#D18F59; --terra-ink:#9C5A26;
+  --red-bg:#F7D7D3; --red:#A3291F; --orange-bg:#FBE2C8; --orange:#94470A;
+  --yellow-bg:#F8EDBB; --yellow:#715600; --ok-bg:#DDE8DC; --ok:#3E5E3F;
+  --on-accent:#fff;
+  --shadow:0 1px 2px rgba(40,40,40,.06),0 6px 18px rgba(40,40,40,.06);
+  --f-ui:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#1C1E1C; --surface:#252825; --panel:#2E312E; --line:#3D413D;
+  --fg:#E5E4E2; --muted:#A6A3A0; --green:#8FB490; --green-ink:#A9CBAA; --terra:#E3A877; --terra-ink:#E9B388;
+  --red-bg:#4B2420; --red:#F4ABA3; --orange-bg:#4A3119; --orange:#F5C08A;
+  --yellow-bg:#443A13; --yellow:#EEDA7C; --ok-bg:#263826; --ok:#ABCDAB; --on-accent:#14200F;
+  --shadow:0 1px 2px rgba(0,0,0,.3); color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-ui);font-size:15px;line-height:1.5;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+[hidden]{display:none!important}
+.wrap{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+header.top{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px;margin-bottom:14px}
+.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.brand b{font-size:22px;color:var(--green);letter-spacing:-.01em}
+.brand span{color:var(--muted);font-size:14px}
+.linkbtn{background:none;border:0;color:var(--green-ink);font:600 14px var(--f-ui);cursor:pointer;padding:4px 0;text-decoration:underline;text-underline-offset:3px}
+nav.tabs{display:flex;gap:4px;border-bottom:2px solid var(--line);margin-bottom:20px;overflow-x:auto}
+nav.tabs button{font:600 15px var(--f-ui);color:var(--muted);background:none;border:0;padding:10px 14px;border-bottom:3px solid transparent;margin-bottom:-2px;cursor:pointer;white-space:nowrap}
+nav.tabs button[aria-selected="true"]{color:var(--green-ink);border-bottom-color:var(--green)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+h2{font-size:19px;margin:0 0 4px;color:var(--green-ink);text-wrap:balance}
+h3{font-size:16px;margin:0;color:var(--fg)}
+p.sub{margin:0 0 16px;color:var(--muted);max-width:68ch}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;box-shadow:var(--shadow)}
+.stack{display:flex;flex-direction:column;gap:16px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.btn{font:600 15px var(--f-ui);border-radius:8px;padding:10px 16px;border:1px solid var(--green);background:var(--green);color:var(--on-accent);cursor:pointer}
+.btn.ghost{background:transparent;color:var(--green-ink)}
+.btn.terra{background:var(--terra);border-color:var(--terra);color:#2B1A0C}
+.btn.small{padding:6px 11px;font-size:13px}
+.btn.big{padding:16px 22px;font-size:18px;min-width:170px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);font-weight:500}
+label.chk{display:flex;gap:8px;align-items:center;font-size:14px}
+input,select,textarea{font:15px var(--f-ui);color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:8px 10px;min-width:0}
+input[type=time]{font-family:var(--f-mono)}
+textarea{width:100%;resize:vertical}
+textarea.code{font-family:var(--f-mono);font-size:12.5px;min-height:170px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.people{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.person{text-align:left;font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;cursor:pointer}
+.person:hover{border-color:var(--green)}
+.person b{display:block;font-size:16px}
+.clockface{display:flex;flex-wrap:wrap;gap:24px;align-items:center;justify-content:space-between}
+.now{font:500 44px/1 var(--f-mono);letter-spacing:-.02em}
+.status{display:inline-block;font-weight:600;font-size:13px;padding:3px 10px;border-radius:999px;background:var(--panel)}
+.status.in{background:var(--ok-bg);color:var(--ok)}
+.status.meal{background:var(--yellow-bg);color:var(--yellow)}
+.timeline{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px;margin-top:10px}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:720px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.stat .n{font:600 28px/1.1 var(--f-mono);font-variant-numeric:tabular-nums}
+.stat .l{font-size:13px;color:var(--muted)}
+.stat.red .n{color:var(--red)} .stat.orange .n{color:var(--orange)} .stat.yellow .n{color:var(--yellow)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:13px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:14px;border-radius:3px;display:inline-block;border:1px solid var(--line)}
+.sw.red{background:var(--red-bg)} .sw.orange{background:var(--orange-bg)} .sw.yellow{background:var(--yellow-bg)} .sw.ok{background:var(--ok-bg)}
+.emp-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 16px;margin-bottom:10px}
+.totals{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13.5px;align-items:center}
+.totals .p{color:var(--terra-ink);font-weight:600}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:760px}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:left;font-weight:600;padding:8px 10px;background:var(--panel);border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.t{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.day{cursor:pointer}
+tr.day:hover td{filter:brightness(.97)}
+tr.sev-red td{background:var(--red-bg)} tr.sev-orange td{background:var(--orange-bg)} tr.sev-yellow td{background:var(--yellow-bg)}
+.pill{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:2px 8px;margin:1px 2px 1px 0;white-space:nowrap}
+.pill.red{background:var(--red);color:var(--surface)} .pill.orange{background:var(--orange);color:var(--surface)}
+.pill.yellow{background:var(--yellow);color:var(--surface)} .pill.ok{background:var(--ok-bg);color:var(--ok)}
+.why{font-size:12.5px;opacity:.85}
+.req{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
+.req:last-child{border-bottom:0}
+.overlay{position:fixed;inset:0;background:rgba(20,22,20,.55);display:flex;align-items:flex-start;justify-content:center;padding:max(24px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 24px max(16px,env(safe-area-inset-left,0px));overflow-y:auto;z-index:20}
+.modal{background:var(--surface);border-radius:12px;max-width:580px;width:100%;padding:22px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.opts{display:flex;flex-direction:column;gap:6px}
+.opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:8px;padding:10px 12px;cursor:pointer}
+.opt:has(input:checked){border-color:var(--green);background:var(--ok-bg)}
+.opt input{margin-top:4px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:560px){.grid4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.note{font-size:13.5px;background:var(--panel);border-radius:8px;padding:10px 12px}
+.note.warn{background:var(--red-bg);color:var(--red)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;z-index:30;max-width:calc(100% - 32px)}
+.toast.err{background:var(--red);color:var(--surface)}
+.loading{color:var(--muted);padding:30px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><b>Holistika Time Clock</b><span id="modeLabel"></span></div>
+    <button class="linkbtn" id="switchMode"></button>
+  </header>
+  <nav class="tabs" id="mtabs" hidden>
+    <button data-tab="report">Pay period report</button>
+    <button data-tab="staff">Staff</button>
+    <button data-tab="leave">Sick &amp; vacation</button>
+    <button data-tab="log">Change log</button>
+  </nav>
+  <main id="view"><p class="loading">Loading…</p></main>
+</div>
+<div id="layer"></div>
+
+<script>
+(function(){
+'use strict';
+const TZ='America/Los_Angeles', SICK_CAP=80, SICK_USE_CAP=48, VAC_PER_YEAR=40;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const view=$('#view'), layer=$('#layer');
+
+if(!window.supabase||SUPABASE_URL.startsWith('PASTE')){
+  view.innerHTML='<div class="panel"><h2>Almost there</h2><p class="sub" style="margin:0">Open <b>index.html</b> in a text editor and paste your Supabase project URL and anon key at the top, where it says SETTINGS. Then upload it again.</p></div>';
+  return;
+}
+const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+
+/* ---------- time helpers (always clinic time) ---------- */
+const partsFmt=new Intl.DateTimeFormat('en-US',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+function laParts(d){const o={};partsFmt.formatToParts(d).forEach(p=>o[p.type]=p.value);return {y:+o.year,m:+o.month,d:+o.day,h:+o.hour%24,mi:+o.minute}}
+const pad=n=>String(n).padStart(2,'0');
+function laDate(d){const p=laParts(d);return p.y+'-'+pad(p.m)+'-'+pad(p.d)}
+function laHM(ts){if(!ts)return '';const p=laParts(new Date(ts));return pad(p.h)+':'+pad(p.mi)}
+function laToISO(date,hm){if(!hm)return null;const[y,m,d]=date.split('-').map(Number),[h,mi]=hm.split(':').map(Number);const want=Date.UTC(y,m-1,d,h,mi);let t=want;
+  for(let i=0;i<3;i++){const p=laParts(new Date(t));t+=want-Date.UTC(p.y,p.m-1,p.d,p.h,p.mi)}return new Date(t).toISOString()}
+function fmtT(ts){if(!ts)return '—';const p=laParts(new Date(ts));const h=p.h%12||12;return h+':'+pad(p.mi)+(p.h>=12?'p':'a')}
+function fmtBig(ms){const p=laParts(new Date(ms));return (p.h%12||12)+':'+pad(p.mi)+' '+(p.h>=12?'PM':'AM')}
+const mins=(a,b)=>Math.round((new Date(b)-new Date(a))/60000);
+const hrs=m=>(m/60).toFixed(2);
+const addDays=(iso,n)=>{const d=new Date(iso+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
+const dlabel=iso=>new Date(iso+'T12:00:00Z').toLocaleDateString('en-US',{timeZone:'UTC',weekday:'short',month:'short',day:'numeric'});
+const daysBetween=(a,b)=>Math.round((new Date(b+'T12:00:00Z')-new Date(a+'T12:00:00Z'))/864e5);
+
+/* ---------- toast ---------- */
+let tt;function toast(msg,err){clearTimeout(tt);let el=$('#toast');if(!el){el=document.createElement('div');el.id='toast';el.setAttribute('role','status');document.body.appendChild(el)}
+  el.className='toast'+(err?' err':'');el.textContent=msg;el.hidden=false;tt=setTimeout(()=>el.hidden=true,err?5000:2800)}
+const errMsg=e=>(e&&(e.message||e.error_description))||String(e);
+
+/* ---------- California rules ---------- */
+function restNeeded(w){if(w<210)return 0;if(w<=360)return 1;if(w<=600)return 2;return 3}
+function mealsOf(sh){return [[sh.meal1_start,sh.meal1_end],[sh.meal2_start,sh.meal2_end]].filter(m=>m[0]&&m[1])}
+function evaluate(sh){
+  const R={worked:null,mealPrem:0,restPrem:0,flags:[],sev:'ok',reg:0,ot:0,dt:0};
+  if(!sh.clock_out){R.flags.push({c:'yellow',t:'Missing clock-out'});R.sev='yellow';return R}
+  const meals=mealsOf(sh), mealMin=meals.reduce((a,m)=>a+mins(m[0],m[1]),0);
+  const w=mins(sh.clock_in,sh.clock_out)-mealMin;R.worked=w;
+  R.reg=Math.min(w,480);R.ot=Math.max(0,Math.min(w,720)-480);R.dt=Math.max(0,w-720);
+  const why=[];
+  if(w>300){
+    if(!meals.length){if(!(sh.meal_answer==='waived'&&w<=360))why.push('No lunch recorded')}
+    else{const d=mins(meals[0][0],meals[0][1]);if(d<30)why.push('Short lunch ('+d+' min)');if(mins(sh.clock_in,meals[0][0])>300)why.push('Late lunch (started after 5th hour)')}
+    if(w>600&&meals.length<2&&!(sh.meal_answer==='waived'&&w<=720))why.push('No second lunch (over 10 hrs)');
+    if(sh.meal_answer==='no'&&!why.length)why.push('Staff reported no full lunch');
+  }
+  if(why.length){R.mealPrem=1;R.flags.push({c:'red',t:'Meal premium',why:why.join(' · ')})}
+  const rn=restNeeded(w);
+  if(rn>0&&sh.rest_answer==='no'){R.restPrem=1;R.flags.push({c:'orange',t:'Rest premium',why:'Staff reported missing a 10-min break ('+rn+' required)'})}
+  if((w>300&&!sh.meal_answer)||(rn>0&&!sh.rest_answer))R.flags.push({c:'yellow',t:'Break questions unanswered'});
+  if(sh.times_accurate===false&&!sh.edited)R.flags.push({c:'yellow',t:'Staff says times are wrong',why:'See messages from staff'});
+  if(sh.edited)R.flags.push({c:'yellow',t:'Edited',why:'See change log'});
+  if(sh.meal_answer==='waived'&&!R.mealPrem&&w>300)R.flags.push({c:'ok',t:'Lunch waived (6 hrs or less)'});
+  R.sev=R.flags.some(f=>f.c==='red')?'red':R.flags.some(f=>f.c==='orange')?'orange':R.flags.some(f=>f.c==='yellow')?'yellow':'ok';
+  return R;
+}
+
+/* ---------- mode switching ---------- */
+let mode=location.hash==='#manager'?'manager':'staff';
+$('#switchMode').onclick=()=>{mode=mode==='staff'?'manager':'staff';location.hash=mode==='manager'?'manager':'';start()};
+window.addEventListener('hashchange',()=>{const m=location.hash==='#manager'?'manager':'staff';if(m!==mode){mode=m;start()}});
+function start(){layer.innerHTML='';$('#mtabs').hidden=true;
+  $('#modeLabel').textContent=mode==='staff'?'Clock in and out':'Manager';
+  $('#switchMode').textContent=mode==='staff'?'Manager login':'Back to staff clock';
+  mode==='staff'?staffStart():mgrStart()}
+
+/* =============================== STAFF =============================== */
+const ST={list:[],emp:null,pin:null,status:null,skew:0,idle:null,tick:null};
+function remember(id){try{id?localStorage.setItem('hl-emp',id):localStorage.removeItem('hl-emp')}catch(e){}}
+function remembered(){try{return localStorage.getItem('hl-emp')}catch(e){return null}}
+const serverNow=()=>Date.now()+ST.skew;
+async function staffStart(){
+  clearInterval(ST.tick);ST.pin=null;ST.status=null;
+  view.innerHTML='<p class="loading">Loading…</p>';
+  const {data,error}=await sb.rpc('staff_list');
+  if(error){view.innerHTML='<div class="panel"><h2>Can’t reach the time clock</h2><p class="sub" style="margin:0">'+esc(errMsg(error))+'. Check your internet connection and refresh.</p></div>';return}
+  ST.list=data||[];
+  const r=remembered();ST.emp=ST.list.find(e=>e.id===r)?r:null;
+  ST.emp?pinScreen():pickScreen();
+}
+function pickScreen(){
+  view.innerHTML=`<div class="stack"><div><h2>Who’s clocking in?</h2><p class="sub">Tap your name. This phone will remember you next time.</p></div>
+  <div class="people">${ST.list.map(e=>`<button class="person" data-id="${e.id}"><b>${esc(e.name)}</b></button>`).join('')||'<p class="muted">No staff added yet. Your manager adds people under Manager login → Staff.</p>'}</div></div>`;
+  view.querySelectorAll('.person').forEach(b=>b.onclick=()=>{ST.emp=b.dataset.id;remember(ST.emp);pinScreen()});
+}
+function pinScreen(){
+  const e=ST.list.find(x=>x.id===ST.emp);
+  view.innerHTML=`<div class="panel" style="max-width:440px"><h2>Hi ${esc(e.name.split(' ')[0])}</h2><p class="sub">Enter your PIN.</p>
+  <form id="pinf" class="row"><input id="pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" style="font:500 24px var(--f-mono);width:140px;letter-spacing:.3em" aria-label="PIN"><button class="btn">Continue</button></form>
+  <p id="pinerr" style="margin:8px 0 0;color:var(--red)"></p><button class="linkbtn" id="notme" style="margin-top:6px">Not ${esc(e.name.split(' ')[0])}? Pick another name</button></div>`;
+  $('#pin').focus();
+  $('#notme').onclick=()=>{remember(null);ST.emp=null;pickScreen()};
+  $('#pinf').onsubmit=async ev=>{ev.preventDefault();ST.pin=$('#pin').value;const ok=await loadStatus();if(ok)clockScreen();else{$('#pin').value='';$('#pin').focus()}};
+}
+async function loadStatus(){
+  const {data,error}=await sb.rpc('staff_status',{p_emp:ST.emp,p_pin:ST.pin});
+  const msg=error?errMsg(error):data&&data.error;
+  if(msg){const el=$('#pinerr');if(el)el.textContent=msg;else toast(msg,true);return false}
+  ST.status=data;ST.skew=new Date(data.now).getTime()-Date.now();return true;
+}
+function bumpIdle(){clearTimeout(ST.idle);ST.idle=setTimeout(()=>{if(mode==='staff'&&ST.pin){toast('Signed out after 3 minutes');staffStart()}},180000)}
+function clockScreen(){
+  bumpIdle();
+  const s=ST.status, today=s.today, open=s.open;
+  const openToday=open&&open.work_date===today, staleOpen=open&&open.work_date!==today;
+  const onMeal=openToday&&((open.meal1_start&&!open.meal1_end)||(open.meal2_start&&!open.meal2_end));
+  const doneToday=!openToday&&s.recent.find(r=>r.work_date===today&&r.clock_out);
+  const state=openToday?(onMeal?'meal':'in'):'off';
+  const label={off:doneToday?'Clocked out':'Not clocked in',in:'Clocked in',meal:'On lunch'}[state];
+  let actions='';
+  if(state==='off')actions=`<button class="btn big" data-a="in">Clock in</button>`;
+  if(state==='in')actions=`<button class="btn big ghost" data-a="meal_start">Start lunch</button><button class="btn big terra" data-a="out">Clock out</button>`;
+  if(state==='meal')actions=`<button class="btn big" data-a="meal_end">End lunch</button>`;
+  const sh=openToday?open:doneToday;
+  let tl='';if(sh){tl=`<div class="timeline mono"><span>In ${fmtT(sh.clock_in)}</span>${sh.meal1_start?`<span>Lunch ${fmtT(sh.meal1_start)}–${sh.meal1_end?fmtT(sh.meal1_end):'…'}</span>`:''}${sh.meal2_start?`<span>Lunch 2 ${fmtT(sh.meal2_start)}–${sh.meal2_end?fmtT(sh.meal2_end):'…'}</span>`:''}${sh.clock_out?`<span>Out ${fmtT(sh.clock_out)}</span>`:''}</div>`}
+  let doneNote='';if(doneToday){const R=evaluate(doneToday);doneNote=`<p style="margin:10px 0 0">Worked <b class="mono">${hrs(R.worked)}</b> hrs today.</p>`}
+  const fl={clock_in:'Clock in',clock_out:'Clock out',meal1_start:'Lunch start',meal1_end:'Lunch end'};
+  view.innerHTML=`<div class="stack">
+  ${staleOpen?`<div class="note warn">You didn’t clock out on ${dlabel(open.work_date)}. Send the correct time to your manager below.</div>`:''}
+  <div class="panel"><div class="clockface"><div><div class="muted">${esc(s.name)} · ${dlabel(today)}</div><div class="now" id="now">${fmtBig(serverNow())}</div>
+  <div style="margin-top:8px"><span class="status ${state==='in'?'in':state==='meal'?'meal':''}">${label}</span></div>${tl}${doneNote}</div><div class="row">${actions}</div></div>
+  ${s.balances?`<div class="row" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line);gap:6px 24px;font-size:15px"><span>Sick time available: <b class="mono">${(+s.balances.sick).toFixed(2)}</b> hrs</span>${s.balances.full_time&&s.balances.vacation!=null?`<span>Vacation available: <b class="mono">${(+s.balances.vacation).toFixed(2)}</b> hrs</span>`:''}</div>`:''}</div>
+  <div class="panel"><h3>Your recent shifts</h3><div class="tbl-wrap" style="margin-top:10px"><table style="min-width:520px"><thead><tr><th>Date</th><th>In</th><th>Lunch</th><th>Out</th><th>Hours</th></tr></thead><tbody>
+  ${s.recent.map(r=>{const R=evaluate(r);return `<tr><td>${dlabel(r.work_date)}</td><td class="t">${fmtT(r.clock_in)}</td><td class="t">${r.meal1_start?fmtT(r.meal1_start)+'–'+fmtT(r.meal1_end):'—'}</td><td class="t">${fmtT(r.clock_out)}</td><td class="t">${R.worked!=null?hrs(R.worked):'—'}</td></tr>`}).join('')||'<tr><td colspan="5" class="muted">No shifts yet.</td></tr>'}
+  </tbody></table></div></div>
+  <div class="panel"><h3>Fix a punch</h3><p class="sub" style="margin-top:4px">Forgot to clock out or tapped the wrong button? Send the correct time. Your manager approves it, and the change is logged.</p>
+  <form id="fixf" class="grid4"><label class="f">Shift<select id="fx-s" required>${s.recent.map(r=>`<option value="${r.id}">${dlabel(r.work_date)}</option>`).join('')}</select></label>
+  <label class="f">What to fix<select id="fx-f">${Object.entries(fl).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
+  <label class="f">Correct time<input type="time" id="fx-t" required></label><label class="f">Reason<input id="fx-r" required placeholder="e.g. forgot to clock out"></label>
+  <div style="grid-column:1/-1"><button class="btn small" ${s.recent.length?'':'disabled'}>Send to manager</button></div></form></div>
+  <div class="row"><button class="btn ghost small" id="signout">Sign out</button></div></div>`;
+  clearInterval(ST.tick);ST.tick=setInterval(()=>{const n=$('#now');if(n)n.textContent=fmtBig(serverNow())},10000);
+  view.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>punch(b.dataset.a,b));
+  $('#signout').onclick=()=>staffStart();
+  $('#fixf').onsubmit=async ev=>{ev.preventDefault();bumpIdle();
+    const {data,error}=await sb.rpc('staff_request_fix',{p_emp:ST.emp,p_pin:ST.pin,p_shift:$('#fx-s').value,p_field:$('#fx-f').value,p_time:$('#fx-t').value,p_reason:$('#fx-r').value});
+    const m=error?errMsg(error):data.error;if(m)return toast(m,true);toast('Sent to your manager');ev.target.reset()};
+}
+async function punch(a,btn){
+  bumpIdle();
+  if(a==='out'){await loadStatus();return attest()}
+  btn.disabled=true;
+  const {data,error}=await sb.rpc('staff_punch',{p_emp:ST.emp,p_pin:ST.pin,p_action:a});
+  const m=error?errMsg(error):data.error;if(m){btn.disabled=false;return toast(m,true)}
+  await loadStatus();
+  toast(a==='in'?'Clocked in at '+fmtBig(serverNow()):a==='meal_start'?'Enjoy your lunch':'Welcome back');
+  clockScreen();
+}
+function attest(){
+  const sh=ST.status.open, now=new Date(serverNow()).toISOString();
+  const meals=mealsOf(sh), w=mins(sh.clock_in,now)-meals.reduce((a,m)=>a+mins(m[0],m[1]),0);
+  const needMeal=w>300, rn=restNeeded(w), issues=[];
+  if(needMeal&&meals.length){const d=mins(meals[0][0],meals[0][1]);if(d<30)issues.push('Your lunch today was '+d+' minutes. It needs to be at least 30.');if(mins(sh.clock_in,meals[0][0])>300)issues.push('Your lunch started after your 5th hour of work.')}
+  if(needMeal&&!meals.length&&w>360)issues.push('No lunch was clocked today.');
+  const names=['morning','afternoon','evening'], items=[];
+  if(needMeal&&meals.length)items.push({k:'meal',t:'I took my full 30-minute lunch break'});
+  if(needMeal&&!meals.length&&w<=360)items.push({k:'waive',t:'I chose to skip lunch today'});
+  for(let i=0;i<rn;i++)items.push({k:'rest'+i,t:rn===1?'I took my 10-minute break':'I took my '+names[i]+' 10-minute break'});
+  items.push({k:'acc',t:'My clock-in and clock-out times for today are accurate'});
+  layer.innerHTML=`<div class="overlay"><form class="modal" id="att"><h2>You worked ${hrs(w)} hours today</h2>
+  ${issues.length?`<div class="note warn" style="margin-top:10px">${issues.map(esc).join('<br>')}<br>Your manager will be notified.</div>`:''}
+  ${rn===0?`<p class="muted" style="margin:8px 0 0;font-size:14px">No 10-minute breaks are required for shifts under 3.5 hours.</p>`:''}
+  <div class="opts" style="margin-top:14px">${items.map(it=>`<label class="opt"><input type="checkbox" name="${it.k}" ${it.k==='waive'?'':'checked'}><span>${it.t}</span></label>`).join('')}</div>
+  <div id="msgbox" ${issues.length?'':'hidden'} style="margin-top:14px"><label class="f" for="att-msg">Message to your manager</label>
+  <textarea id="att-msg" style="min-height:80px;margin-top:4px" placeholder="Anything your manager should know? (optional)"></textarea></div>
+  <div class="row" style="margin-top:16px"><button class="btn terra" id="att-go">Clock out</button><button type="button" class="btn ghost" id="cancel">Cancel</button><button type="button" class="btn ghost small" id="addmsg" ${issues.length?'hidden':''}>Add a note for my manager</button></div></form></div>`;
+  const form=$('#att'),box=$('#msgbox');
+  form.addEventListener('change',()=>{const missed=items.some(it=>it.k!=='waive'&&!form.elements[it.k].checked);if(missed){box.hidden=false;$('#addmsg').hidden=true}
+    const off=!form.elements.acc.checked;$('#att-msg').required=off;$('#att-msg').placeholder=off?'What’s wrong with today’s times? (required)':'Anything your manager should know? (optional)'});
+  $('#addmsg').onclick=()=>{box.hidden=false;$('#addmsg').hidden=true;$('#att-msg').focus()};
+  $('#cancel').onclick=()=>layer.innerHTML='';
+  form.onsubmit=async ev=>{ev.preventDefault();const el=form.elements;$('#att-go').disabled=true;
+    const mealAns=!needMeal?'n/a':el.meal?(el.meal.checked?'yes':'no'):el.waive&&el.waive.checked?'waived':'no';
+    const restAns=rn?([...Array(rn).keys()].every(i=>el['rest'+i].checked)?'yes':'no'):'n/a';
+    const unchecked=items.filter(it=>it.k!=='waive'&&!el[it.k].checked).map(it=>it.k==='acc'?'Times are not accurate':it.t.replace(/^I took/,'Did not take'));
+    const {data,error}=await sb.rpc('staff_clock_out',{p_emp:ST.emp,p_pin:ST.pin,p_meal_answer:mealAns,p_rest_answer:restAns,p_accurate:el.acc.checked,p_items:[...issues,...unchecked],p_message:$('#att-msg').value});
+    const m=error?errMsg(error):data.error;if(m){$('#att-go').disabled=false;return toast(m,true)}
+    layer.innerHTML='';const told=issues.length||unchecked.length||$('#att-msg').value.trim();
+    toast(told?'Clocked out. Your manager was notified.':'Clocked out. Have a good evening.');
+    setTimeout(staffStart,1500)};
+}
+
+/* =============================== MANAGER =============================== */
+const M={tab:'report',period:null,exp:'summary',emps:[],shifts:[],messages:[],requests:[],leave:[],audit:[]};
+document.querySelectorAll('#mtabs button').forEach(b=>b.onclick=()=>{M.tab=b.dataset.tab;mRender()});
+async function mgrStart(){
+  view.innerHTML='<p class="loading">Loading…</p>';
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session)return loginScreen();
+  const {data:isM}=await sb.rpc('is_manager');
+  if(!isM){view.innerHTML='<div class="panel"><h2>Not a manager account</h2><p class="sub">This login isn’t set up as a manager yet. See step 3 of the setup guide.</p><button class="btn ghost" id="lo">Sign out</button></div>';$('#lo').onclick=async()=>{await sb.auth.signOut();mgrStart()};return}
+  await mLoad();$('#mtabs').hidden=false;mRender();
+}
+function loginScreen(){
+  view.innerHTML=`<div class="panel" style="max-width:440px"><h2>Manager login</h2><form id="lf" class="stack" style="margin-top:10px">
+  <label class="f">Email<input id="lf-e" type="email" autocomplete="username" required></label><label class="f">Password<input id="lf-p" type="password" autocomplete="current-password" required></label>
+  <div><button class="btn">Sign in</button></div><p id="lf-err" style="margin:0;color:var(--red)"></p></form></div>`;
+  $('#lf').onsubmit=async ev=>{ev.preventDefault();const {error}=await sb.auth.signInWithPassword({email:$('#lf-e').value,password:$('#lf-p').value});if(error)$('#lf-err').textContent=errMsg(error);else mgrStart()};
+}
+async function fetchAll(table,cols,order){let out=[],from=0;for(;;){const {data,error}=await sb.from(table).select(cols).order(order).range(from,from+999);if(error)throw error;out=out.concat(data);if(data.length<1000)break;from+=1000}return out}
+async function mLoad(){
+  try{
+    [M.emps,M.shifts,M.messages,M.requests,M.leave,M.audit]=await Promise.all([
+      fetchAll('employees','id,name,role,full_time,active,start_date,sick_balance_start,sick_used_year_start,vac_balance_start,created_at','name'),
+      fetchAll('shifts','*','clock_in'),fetchAll('messages','*','created_at'),fetchAll('fix_requests','*','created_at'),
+      fetchAll('leave','*','leave_date'),fetchAll('audit_log','*','id')]);
+  }catch(e){toast('Couldn’t load data: '+errMsg(e),true)}
+}
+const empById=id=>M.emps.find(e=>e.id===id)||{name:'(unknown)'};
+const todayLA=()=>laDate(new Date());
+function periods(){const t=todayLA(),out=[];let s=PAY_PERIOD_START;while(addDays(s,14)<=t)s=addDays(s,14);for(let i=0;i<26;i++){out.push({start:s,end:addDays(s,13)});s=addDays(s,-14)}return out}
+async function call(fn,args,okMsg){const {data,error}=await sb.rpc(fn,args);if(error){toast(errMsg(error),true);return null}if(okMsg)toast(okMsg);await mLoad();mRender();return data||true}
+function mRender(){
+  document.querySelectorAll('#mtabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===M.tab));
+  ({report:mReport,staff:mStaff,leave:mLeave,log:mLog})[M.tab]();
+}
+const FIELD={clock_in:'Clock in',clock_out:'Clock out',meal1_start:'Lunch start',meal1_end:'Lunch end',meal2_start:'2nd lunch start',meal2_end:'2nd lunch end',meal_answer:'Lunch answer',rest_answer:'Break answer'};
+
+/* ---- report ---- */
+function mReport(){
+  const ps=periods();if(!M.period)M.period=ps[0].start;
+  const P=ps.find(p=>p.start===M.period)||ps[0];
+  const inP=M.shifts.filter(s=>s.work_date>=P.start&&s.work_date<=P.end);
+  let mp=0,rp=0,att=0;inP.forEach(s=>{const R=evaluate(s);mp+=R.mealPrem;rp+=R.restPrem;if(R.flags.some(f=>f.t==='Missing clock-out'||f.t==='Break questions unanswered'))att++});
+  const msgs=M.messages.filter(m=>m.status==='new').reverse(), pend=M.requests.filter(r=>r.status==='pending');
+  const show=M.emps.filter(e=>e.active||inP.some(s=>s.employee_id===e.id));
+  view.innerHTML=`<div class="stack">
+  <div class="row" style="justify-content:space-between;align-items:flex-end"><div><h2>Pay period report</h2><p class="sub" style="margin:0">Tap any day to fix it. Every change asks for a reason and goes in the change log.</p></div>
+  <div class="row" style="align-items:flex-end"><label class="f">Pay period<select id="per">${ps.map(p=>`<option value="${p.start}" ${p.start===P.start?'selected':''}>${dlabel(p.start)} – ${dlabel(p.end)}${p.end>=todayLA()?' (in progress)':''}</option>`).join('')}</select></label><button class="btn small ghost" id="refresh">Refresh</button><button class="btn small ghost" id="logout">Sign out</button></div></div>
+  <div class="stats"><div class="stat red"><div class="n">${mp}</div><div class="l">Meal premiums owed</div></div><div class="stat orange"><div class="n">${rp}</div><div class="l">Rest premiums owed</div></div><div class="stat yellow"><div class="n">${att}</div><div class="l">Days needing follow-up</div></div><div class="stat"><div class="n">${msgs.length+pend.length}</div><div class="l">Messages and requests</div></div></div>
+  ${msgs.length?`<div class="panel"><h3>Messages from staff at clock-out</h3>${msgs.map(m=>{const sh=M.shifts.find(s=>s.id===m.shift_id);return `<div class="req"><div style="min-width:0;flex:1 1 300px"><b>${esc(empById(m.employee_id).name)}</b> · ${sh?dlabel(sh.work_date):''}<div class="why">${(m.items||[]).map(esc).join(' · ')}</div>${m.body?`<div style="margin-top:4px">"${esc(m.body)}"</div>`:''}</div><div class="row">${sh?`<button class="btn small ghost" data-open="${sh.id}">Open shift</button>`:''}<button class="btn small" data-handled="${m.id}">Mark handled</button></div></div>`}).join('')}</div>`:''}
+  ${pend.length?`<div class="panel"><h3>Correction requests</h3>${pend.map(r=>{const sh=M.shifts.find(s=>s.id===r.shift_id)||{};return `<div class="req"><div style="min-width:0;flex:1 1 300px"><b>${esc(empById(r.employee_id).name)}</b> · ${sh.work_date?dlabel(sh.work_date):''} · ${FIELD[r.field]}: <span class="mono">${fmtT(sh[r.field])} → ${fmtT(r.new_time)}</span><div class="why">"${esc(r.reason)}"</div></div><div class="row"><button class="btn small" data-approve="${r.id}">Approve</button><button class="btn small ghost" data-decline="${r.id}">Decline</button></div></div>`}).join('')}</div>`:''}
+  <div class="legend"><span><i class="sw red"></i>Meal premium (1 hr pay)</span><span><i class="sw orange"></i>Rest premium (1 hr pay)</span><span><i class="sw yellow"></i>Edited, missing punch, or needs follow-up</span><span><i class="sw ok"></i>Clean day</span></div>
+  ${show.map(e=>empBlock(e,inP.filter(s=>s.employee_id===e.id),P)).join('')||'<div class="panel"><p class="muted" style="margin:0">No staff yet. Add people under the Staff tab.</p></div>'}
+  <div class="panel"><div class="row" style="justify-content:space-between"><h3>Send to PayEntry</h3><div class="row"><button class="btn small ${M.exp==='summary'?'':'ghost'}" data-x="summary">Payroll summary</button><button class="btn small ${M.exp==='detail'?'':'ghost'}" data-x="detail">Daily detail</button></div></div>
+  <p class="sub" style="margin:6px 0 10px">Download the spreadsheet and send it to PayEntry. Premiums are paid at each person’s regular rate of pay. Save a copy every pay period as your own backup.</p>
+  <textarea class="code" id="csv" readonly aria-label="Export">${esc(M.exp==='summary'?csvSummary(P):csvDetail(P))}</textarea>
+  <div class="row" style="margin-top:8px"><button class="btn small" id="dl">Download spreadsheet (.csv)</button><button class="btn small ghost" id="copy">Copy</button><button class="btn small ghost" id="backup">Download full backup</button></div></div></div>`;
+  $('#per').onchange=e=>{M.period=e.target.value;mRender()};
+  $('#refresh').onclick=async()=>{await mLoad();mRender();toast('Up to date')};
+  $('#logout').onclick=async()=>{await sb.auth.signOut();mgrStart()};
+  view.querySelectorAll('tr.day').forEach(tr=>{tr.onclick=()=>editShift(tr.dataset.id);tr.onkeydown=ev=>{if(ev.key==='Enter')editShift(tr.dataset.id)}});
+  view.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>editShift(b.dataset.open));
+  view.querySelectorAll('[data-handled]').forEach(b=>b.onclick=()=>call('manager_handle_message',{p_id:b.dataset.handled},'Marked handled'));
+  view.querySelectorAll('[data-approve]').forEach(b=>b.onclick=()=>call('manager_decide_request',{p_id:b.dataset.approve,p_approve:true},'Approved and logged'));
+  view.querySelectorAll('[data-decline]').forEach(b=>b.onclick=()=>call('manager_decide_request',{p_id:b.dataset.decline,p_approve:false},'Declined'));
+  view.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>addShift(b.dataset.add));
+  view.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>{M.exp=b.dataset.x;mRender()});
+  $('#dl').onclick=()=>download('holistika-'+M.exp+'-'+P.start+'.csv',$('#csv').value,'text/csv');
+  $('#copy').onclick=()=>{const t=$('#csv');(navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject()).then(()=>toast('Copied'),()=>{t.select();toast('Selected. Press Ctrl+C or Cmd+C')})};
+  $('#backup').onclick=()=>download('holistika-timeclock-backup-'+todayLA()+'.json',JSON.stringify({exported:new Date().toISOString(),employees:M.emps,shifts:M.shifts,messages:M.messages,fix_requests:M.requests,leave:M.leave,audit_log:M.audit},null,1),'application/json');
+}
+function download(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
+function empBlock(e,rows,P){
+  let w=0,ot=0,dt=0,mp=0,rp=0;
+  const ans=a=>a==='yes'?'Yes':a==='no'?'<b>No</b>':a==='waived'?'Waived':a==='n/a'?'—':'<i>No answer</i>';
+  const trs=rows.map(s=>{const R=evaluate(s);if(R.worked!=null){w+=R.worked;ot+=R.ot;dt+=R.dt}mp+=R.mealPrem;rp+=R.restPrem;
+    return `<tr class="day sev-${R.sev}" data-id="${s.id}" tabindex="0"><td>${dlabel(s.work_date)}</td><td class="t">${fmtT(s.clock_in)}</td><td class="t">${s.meal1_start?fmtT(s.meal1_start)+'–'+fmtT(s.meal1_end):'—'}${s.meal2_start?'<br>'+fmtT(s.meal2_start)+'–'+fmtT(s.meal2_end):''}</td><td class="t">${fmtT(s.clock_out)}</td><td class="t">${R.worked!=null?hrs(R.worked):'—'}</td><td>${ans(s.meal_answer)}</td><td>${ans(s.rest_answer)}</td><td>${R.flags.length?R.flags.map(f=>`<span class="pill ${f.c}">${f.t}</span>`).join('')+R.flags.filter(f=>f.why).map(f=>`<div class="why">${esc(f.why)}</div>`).join(''):'<span class="pill ok">Clean</span>'}</td></tr>`}).join('');
+  const lv=M.leave.filter(l=>!l.voided&&l.employee_id===e.id&&l.leave_date>=P.start&&l.leave_date<=P.end);
+  const sick=lv.filter(l=>l.kind==='sick').reduce((a,l)=>a+ +l.hours,0),vac=lv.filter(l=>l.kind==='vacation').reduce((a,l)=>a+ +l.hours,0);
+  return `<section class="panel"><div class="emp-head"><div><h3>${esc(e.name)}</h3><span class="muted" style="font-size:13px">${esc(e.role)}${e.role?' · ':''}${e.full_time?'Full-time':'Part-time'}${e.active?'':' · inactive'}</span></div>
+  <div class="totals mono"><span>${hrs(w)} hrs</span>${ot?`<span>OT ${hrs(ot)}</span>`:''}${dt?`<span>DT ${hrs(dt)}</span>`:''}${sick?`<span>Sick ${sick}</span>`:''}${vac?`<span>Vacation ${vac}</span>`:''}${mp?`<span class="p">Meal prem ${mp}</span>`:''}${rp?`<span class="p">Rest prem ${rp}</span>`:''}<button class="btn small ghost" data-add="${e.id}">Add missed shift</button></div></div>
+  ${rows.length?`<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>In</th><th>Lunch</th><th>Out</th><th>Hours</th><th>Full lunch?</th><th>10-min breaks?</th><th>Flags</th></tr></thead><tbody>${trs}</tbody></table></div>`:'<p class="muted" style="margin:0">No shifts this period.</p>'}</section>`;
+}
+function editShift(id){
+  const sh=M.shifts.find(s=>s.id===id),e=empById(sh.employee_id);
+  const tf=['clock_in','meal1_start','meal1_end','meal2_start','meal2_end','clock_out'];
+  layer.innerHTML=`<div class="overlay"><form class="modal" id="ed"><h2>Edit ${esc(e.name.split(' ')[0])}’s shift</h2><p class="sub">${dlabel(sh.work_date)}. The original times stay in the change log.</p>
+  <div class="grid2">${tf.map(k=>`<label class="f">${FIELD[k]}<input type="time" id="e-${k}" value="${laHM(sh[k])}"></label>`).join('')}
+  <label class="f">Full lunch?<select id="e-meal_answer"><option value="">No answer</option>${['yes','no','waived','n/a'].map(x=>`<option ${sh.meal_answer===x?'selected':''}>${x}</option>`).join('')}</select></label>
+  <label class="f">10-min breaks?<select id="e-rest_answer"><option value="">No answer</option>${['yes','no','n/a'].map(x=>`<option ${sh.rest_answer===x?'selected':''}>${x}</option>`).join('')}</select></label></div>
+  <label class="f" style="margin-top:12px">Reason for change (required)<input id="e-r" required placeholder="e.g. Confirmed with employee, forgot to clock out"></label>
+  <p class="note" style="margin:12px 0 0">If you change a break answer, confirm it with the employee first and say so in the reason.</p>
+  <div class="row" style="margin-top:16px"><button class="btn">Save change</button><button type="button" class="btn ghost" id="cancel">Cancel</button></div></form></div>`;
+  $('#cancel').onclick=()=>layer.innerHTML='';
+  $('#ed').onsubmit=async ev=>{ev.preventDefault();const ch={};
+    tf.forEach(k=>{const v=$('#e-'+k).value;if(v!==laHM(sh[k]))ch[k]=v?laToISO(sh.work_date,v):null});
+    ['meal_answer','rest_answer'].forEach(k=>{const v=$('#e-'+k).value;if(v!==(sh[k]||''))ch[k]=v||null});
+    if(!Object.keys(ch).length){layer.innerHTML='';return toast('Nothing changed')}
+    const r=await call('manager_edit_shift',{p_shift:id,p_changes:ch,p_reason:$('#e-r').value});
+    if(r){layer.innerHTML='';toast('Saved. '+r.changes+' change'+(r.changes>1?'s':'')+' logged')}};
+}
+function addShift(empId){
+  const e=empById(empId);
+  layer.innerHTML=`<div class="overlay"><form class="modal" id="as"><h2>Add a missed shift for ${esc(e.name.split(' ')[0])}</h2><p class="sub">For a day they forgot to clock in at all.</p>
+  <div class="grid2"><label class="f">Date<input type="date" id="as-d" value="${todayLA()}" required></label><span></span>
+  <label class="f">Clock in<input type="time" id="as-in" required></label><label class="f">Clock out<input type="time" id="as-out" required></label>
+  <label class="f">Lunch start<input type="time" id="as-ms"></label><label class="f">Lunch end<input type="time" id="as-me"></label>
+  <label class="f">Full lunch?<select id="as-ma"><option value="">No answer</option><option>yes</option><option>no</option><option>waived</option></select></label>
+  <label class="f">10-min breaks?<select id="as-ra"><option value="">No answer</option><option>yes</option><option>no</option></select></label></div>
+  <label class="f" style="margin-top:12px">Reason (required)<input id="as-r" required placeholder="e.g. Forgot to clock in, times confirmed with employee"></label>
+  <div class="row" style="margin-top:16px"><button class="btn">Add shift</button><button type="button" class="btn ghost" id="cancel">Cancel</button></div></form></div>`;
+  $('#cancel').onclick=()=>layer.innerHTML='';
+  $('#as').onsubmit=async ev=>{ev.preventDefault();const r=await call('manager_add_shift',{p_emp:empId,p_date:$('#as-d').value,p_in:$('#as-in').value,p_out:$('#as-out').value,p_meal_start:$('#as-ms').value,p_meal_end:$('#as-me').value,p_meal_answer:$('#as-ma').value,p_rest_answer:$('#as-ra').value,p_reason:$('#as-r').value},'Shift added and logged');if(r)layer.innerHTML=''};
+}
+function csvRow(a){return a.map(x=>{x=String(x??'');return /[",\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x}).join(',')}
+function csvDetail(P){
+  const out=[csvRow(['Employee','Date','Clock In','Lunch Start','Lunch End','Clock Out','Hours Worked','Regular','OT','DT','Full Lunch Answer','Rest Break Answer','Meal Premium Hrs','Rest Premium Hrs','Edited','Flags'])];
+  M.shifts.filter(s=>s.work_date>=P.start&&s.work_date<=P.end).sort((a,b)=>empById(a.employee_id).name.localeCompare(empById(b.employee_id).name)||a.clock_in.localeCompare(b.clock_in)).forEach(s=>{const R=evaluate(s);
+    out.push(csvRow([empById(s.employee_id).name,s.work_date,laHM(s.clock_in),laHM(s.meal1_start),laHM(s.meal1_end),s.clock_out?laHM(s.clock_out):'MISSING',R.worked!=null?hrs(R.worked):'',hrs(R.reg),hrs(R.ot),hrs(R.dt),s.meal_answer||'no answer',s.rest_answer||'no answer',R.mealPrem,R.restPrem,s.edited?'yes':'no',R.flags.map(f=>f.t+(f.why?' ('+f.why+')':'')).join('; ')]))});
+  return out.join('\n');
+}
+function csvSummary(P){
+  const out=['Pay period '+P.start+' to '+P.end,csvRow(['Employee','Regular Hrs','OT Hrs','DT Hrs','Meal Premium Hrs','Rest Premium Hrs','Sick Hrs Used','Vacation Hrs Used','Missing Clock-outs'])];
+  M.emps.forEach(e=>{const sh=M.shifts.filter(s=>s.employee_id===e.id&&s.work_date>=P.start&&s.work_date<=P.end);
+    const lv=M.leave.filter(l=>!l.voided&&l.employee_id===e.id&&l.leave_date>=P.start&&l.leave_date<=P.end);
+    if(!sh.length&&!lv.length)return;let reg=0,ot=0,dt=0,mp=0,rp=0,miss=0;
+    sh.forEach(s=>{const R=evaluate(s);reg+=R.reg;ot+=R.ot;dt+=R.dt;mp+=R.mealPrem;rp+=R.restPrem;if(!s.clock_out)miss++});
+    out.push(csvRow([e.name,hrs(reg),hrs(ot),hrs(dt),mp,rp,lv.filter(l=>l.kind==='sick').reduce((a,l)=>a+ +l.hours,0),lv.filter(l=>l.kind==='vacation').reduce((a,l)=>a+ +l.hours,0),miss]))});
+  out.push('','Daily overtime shown (over 8 hrs, double time over 12). Weekly overtime over 40 hrs and 7th-day rules to be confirmed by payroll.');
+  return out.join('\n');
+}
+
+/* ---- staff setup ---- */
+function mStaff(){
+  view.innerHTML=`<div class="stack"><div class="row" style="justify-content:space-between;align-items:flex-end"><div><h2>Staff</h2><p class="sub" style="margin:0">Add each hourly employee with their own PIN. Starting balances come from PayEntry.</p></div><button class="btn" id="addemp">Add employee</button></div>
+  <div class="panel" style="padding:0"><div class="tbl-wrap" style="border:0"><table><thead><tr><th>Name</th><th>Role</th><th>Type</th><th>Started on app</th><th>Status</th><th></th></tr></thead><tbody>
+  ${M.emps.map(e=>`<tr><td><b>${esc(e.name)}</b></td><td>${esc(e.role)}</td><td>${e.full_time?'Full-time':'Part-time'}</td><td>${dlabel(e.start_date)}</td><td>${e.active?'<span class="pill ok">Active</span>':'<span class="pill yellow">Inactive</span>'}</td><td><button class="btn small ghost" data-edit="${e.id}">Edit</button></td></tr>`).join('')||'<tr><td colspan="6" class="muted">No staff yet.</td></tr>'}
+  </tbody></table></div></div>
+  <p class="note">To remove someone who left, edit them and turn off <b>Active</b>. Their records stay, which California requires for at least 3 years.</p></div>`;
+  $('#addemp').onclick=()=>empForm(null);
+  view.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>empForm(b.dataset.edit));
+}
+function empForm(id){
+  const e=id?M.emps.find(x=>x.id===id):{name:'',role:'',full_time:false,active:true,start_date:todayLA(),sick_balance_start:0,sick_used_year_start:0,vac_balance_start:0};
+  layer.innerHTML=`<div class="overlay"><form class="modal" id="ef"><h2>${id?'Edit '+esc(e.name):'Add employee'}</h2>
+  <div class="grid2" style="margin-top:12px"><label class="f">Name<input id="ef-n" value="${esc(e.name)}" required></label><label class="f">Role<input id="ef-r" value="${esc(e.role)}" placeholder="e.g. Vet assistant"></label>
+  <label class="f">${id?'New PIN (leave blank to keep)':'PIN (4 to 6 digits)'}<input id="ef-p" inputmode="numeric" pattern="[0-9]{4,6}" ${id?'':'required'} autocomplete="off"></label>
+  <label class="f">Start date on this app<input type="date" id="ef-s" value="${e.start_date}" required></label>
+  <label class="chk"><input type="checkbox" id="ef-ft" ${e.full_time?'checked':''}> Full-time</label><label class="chk"><input type="checkbox" id="ef-a" ${e.active?'checked':''}> Active</label></div>
+  <h3 style="margin-top:18px">Starting balances from PayEntry</h3><p class="sub" style="margin:2px 0 10px">As of the start date above.</p>
+  <div class="grid2"><label class="f">Sick hours available<input type="number" step="0.01" min="0" id="ef-sb" value="${e.sick_balance_start}"></label>
+  <label class="f">Sick hours already used this year<input type="number" step="0.01" min="0" id="ef-su" value="${e.sick_used_year_start}"></label>
+  <label class="f">Vacation hours available<input type="number" step="0.01" min="0" id="ef-vb" value="${e.vac_balance_start}"></label></div>
+  <div class="row" style="margin-top:16px"><button class="btn">${id?'Save':'Add employee'}</button><button type="button" class="btn ghost" id="cancel">Cancel</button></div></form></div>`;
+  $('#cancel').onclick=()=>layer.innerHTML='';
+  $('#ef').onsubmit=async ev=>{ev.preventDefault();
+    const r=await call('manager_save_employee',{p_id:id,p_name:$('#ef-n').value,p_role:$('#ef-r').value,p_full_time:$('#ef-ft').checked,p_pin:$('#ef-p').value||null,p_active:$('#ef-a').checked,p_start_date:$('#ef-s').value,p_sick_balance_start:+$('#ef-sb').value||0,p_sick_used_year_start:+$('#ef-su').value||0,p_vac_balance_start:+$('#ef-vb').value||0},id?'Saved':'Employee added');
+    if(r)layer.innerHTML=''};
+}
+
+/* ---- sick & vacation ---- */
+function balances(e){
+  const t=todayLA(),yr=t.slice(0,4);
+  const mine=M.shifts.filter(s=>s.employee_id===e.id&&s.work_date>=e.start_date);
+  const hoursApp=mine.reduce((a,s)=>a+(evaluate(s).worked||0),0)/60;
+  const lv=M.leave.filter(l=>!l.voided&&l.employee_id===e.id&&l.leave_date>=e.start_date);
+  const sickApp=lv.filter(l=>l.kind==='sick').reduce((a,l)=>a+ +l.hours,0);
+  const sickYear=(e.start_date.slice(0,4)===yr?+e.sick_used_year_start:0)+lv.filter(l=>l.kind==='sick'&&l.leave_date.startsWith(yr)).reduce((a,l)=>a+ +l.hours,0);
+  const earned=hoursApp/30, sickBal=Math.max(0,Math.min(SICK_CAP,+e.sick_balance_start+earned-sickApp));
+  const vacEarned=e.full_time?VAC_PER_YEAR*Math.max(0,daysBetween(e.start_date,t))/365:0;
+  const vacUsed=lv.filter(l=>l.kind==='vacation').reduce((a,l)=>a+ +l.hours,0);
+  return {hoursApp,earned,sickYear,sickBal,vacEarned,vacUsed,vacBal:+e.vac_balance_start+vacEarned-vacUsed};
+}
+function mLeave(){
+  const act=M.emps.filter(e=>e.active);
+  view.innerHTML=`<div class="stack"><div><h2>Sick and vacation</h2><p class="sub">Sick time builds at 1 hour for every 30 hours worked, stops growing at ${SICK_CAP} hours, and each person can use up to ${SICK_USE_CAP} hours a year. Vacation is for full-time staff: ${VAC_PER_YEAR} hours a year, earned a little each day.</p></div>
+  <div class="panel" style="padding:0"><div class="tbl-wrap" style="border:0"><table><thead><tr><th>Employee</th><th>Hours on app</th><th>Sick earned on app</th><th>Sick used this year</th><th>Sick balance</th><th>Vacation earned</th><th>Vacation used</th><th>Vacation balance</th></tr></thead><tbody>
+  ${act.map(e=>{const b=balances(e);return `<tr><td><b>${esc(e.name)}</b><div class="muted" style="font-size:12.5px">since ${dlabel(e.start_date)}</div></td><td class="t">${b.hoursApp.toFixed(1)}</td><td class="t">${b.earned.toFixed(2)}</td><td class="t">${b.sickYear} <span class="muted">of ${SICK_USE_CAP}</span></td><td class="t"><b>${b.sickBal.toFixed(2)}</b>${b.sickBal>=SICK_CAP?' <span class="pill yellow">At cap</span>':''}</td><td class="t">${e.full_time?b.vacEarned.toFixed(2):'—'}</td><td class="t">${e.full_time?b.vacUsed:'—'}</td><td class="t">${e.full_time?'<b>'+b.vacBal.toFixed(2)+'</b>':'—'}</td></tr>`}).join('')||'<tr><td colspan="8" class="muted">No staff yet.</td></tr>'}
+  </tbody></table></div></div>
+  <div class="panel"><h3>Record time off</h3><form id="lvf" class="grid4" style="margin-top:10px"><label class="f">Employee<select id="lv-e">${act.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select></label>
+  <label class="f">Date<input type="date" id="lv-d" value="${todayLA()}" required></label><label class="f">Type<select id="lv-t"><option value="sick">Sick</option><option value="vacation">Vacation</option></select></label>
+  <label class="f">Hours<input type="number" id="lv-h" min="0.25" step="0.25" value="8" required></label><label class="f" style="grid-column:1/-1">Note (optional)<input id="lv-n"></label>
+  <div style="grid-column:1/-1" class="row"><button class="btn small" ${act.length?'':'disabled'}>Add</button><span id="lv-msg" style="font-size:13px;color:var(--red)"></span></div></form>
+  <div style="margin-top:14px">${M.leave.filter(l=>!l.voided).slice().reverse().slice(0,40).map(l=>`<div class="req"><span>${esc(empById(l.employee_id).name)} · ${dlabel(l.leave_date)}${l.note?' · '+esc(l.note):''}</span><span class="row"><span class="mono">${l.kind==='sick'?'Sick':'Vacation'} ${+l.hours} hrs</span><button class="btn small ghost" data-void="${l.id}">Remove</button></span></div>`).join('')||'<p class="muted">No time off recorded yet.</p>'}</div></div></div>`;
+  $('#lvf').onsubmit=async ev=>{ev.preventDefault();const e=empById($('#lv-e').value),t=$('#lv-t').value,h=+$('#lv-h').value,b=balances(e),msg=$('#lv-msg');
+    if(t==='vacation'&&!e.full_time)return msg.textContent=e.name.split(' ')[0]+' is part-time and doesn’t earn vacation.';
+    if(t==='sick'&&h>b.sickBal+0.001)return msg.textContent='Only '+b.sickBal.toFixed(2)+' sick hours available.';
+    if(t==='sick'&&b.sickYear+h>SICK_USE_CAP)return msg.textContent='That would go over the '+SICK_USE_CAP+'-hour yearly limit.';
+    if(t==='vacation'&&h>b.vacBal+0.001)return msg.textContent='Only '+b.vacBal.toFixed(2)+' vacation hours available.';
+    await call('manager_add_leave',{p_emp:e.id,p_date:$('#lv-d').value,p_kind:t,p_hours:h,p_note:$('#lv-n').value},'Time off recorded')};
+  view.querySelectorAll('[data-void]').forEach(b=>b.onclick=()=>{
+    layer.innerHTML=`<div class="overlay"><form class="modal" id="vf"><h2>Remove this time off?</h2><p class="sub">It stays in the change log.</p><label class="f">Reason (required)<input id="vf-r" required placeholder="e.g. Entered the wrong date"></label><div class="row" style="margin-top:16px"><button class="btn">Remove</button><button type="button" class="btn ghost" id="cancel">Cancel</button></div></form></div>`;
+    $('#cancel').onclick=()=>layer.innerHTML='';
+    $('#vf').onsubmit=async ev=>{ev.preventDefault();const r=await call('manager_void_leave',{p_id:b.dataset.void,p_reason:$('#vf-r').value},'Removed and logged');if(r)layer.innerHTML=''}});
+}
+
+/* ---- change log ---- */
+function mLog(){
+  const rows=M.audit.slice().reverse();
+  const val=(a,which)=>{if(a.field==='Employee details'){try{const o=JSON.parse(a.old_value),n=JSON.parse(a.new_value);const k=Object.keys(n).filter(x=>JSON.stringify(o[x])!==JSON.stringify(n[x]));return k.map(x=>x.replace(/_/g,' ')+': '+(which==='old'?o[x]:n[x])).join(', ')}catch(e){}}return which==='old'?a.old_value:a.new_value};
+  view.innerHTML=`<div class="stack"><div><h2>Change log</h2><p class="sub">Every change to a punch, break answer, employee or time off, with the original value, who changed it and why. Nothing here can be edited or deleted.</p></div>
+  <div class="panel" style="padding:0"><div class="tbl-wrap" style="border:0"><table><thead><tr><th>When</th><th>Changed by</th><th>Employee</th><th>Shift</th><th>What</th><th>From</th><th>To</th><th>Reason</th></tr></thead><tbody>
+  ${rows.map(a=>{const sh=M.shifts.find(s=>s.id===a.shift_id);return `<tr><td class="t">${laDate(new Date(a.at))} ${fmtT(a.at)}</td><td>${esc(a.actor)}</td><td>${esc(a.employee_id?empById(a.employee_id).name:'')}</td><td>${sh?dlabel(sh.work_date):''}</td><td>${esc(FIELD[a.field]||a.field)}</td><td>${esc(val(a,'old')??'')}</td><td>${esc(val(a,'new')??'')}</td><td>${esc(a.reason)}</td></tr>`}).join('')||'<tr><td colspan="8" class="muted">No changes yet.</td></tr>'}
+  </tbody></table></div></div></div>`;
+}
+
+start();
+})();
+</script>
+</body>
+</html>
