@@ -12,6 +12,7 @@
 const SUPABASE_URL      = 'https://nkjyqlitsuuzbtjrvgbd.supabase.co';        // looks like https://abcdefgh.supabase.co
 const SUPABASE_ANON_KEY = 'sb_publishable_dahuQiAZOmAy4Eh8i2NxjQ_MpijTK19';    // the long "anon public" (or "publishable") key
 const PAY_PERIOD_START  = '2026-09-28';  // the first day of ANY past pay period (ask PayEntry). Pay periods are every 2 weeks.
+const WORKWEEK_START_DAY = 1;           // day your workweek starts for weekly overtime: 0 = Sunday, 1 = Monday ... 6 = Saturday
 /* ========================================================================================== */
 </script>
 <style>
@@ -172,19 +173,21 @@ let tt;function toast(msg,err){clearTimeout(tt);let el=$('#toast');if(!el){el=do
 const errMsg=e=>(e&&(e.message||e.error_description))||String(e);
 
 /* ---------- California rules ---------- */
-function restNeeded(w){if(w<210)return 0;if(w<=360)return 1;if(w<=600)return 2;return 3}
+function restNeeded(w){if(w<210)return 0;return Math.floor(w/240)+(w%240>120?1:0)}
 function mealsOf(sh){return [[sh.meal1_start,sh.meal1_end],[sh.meal2_start,sh.meal2_end]].filter(m=>m[0]&&m[1])}
-function evaluate(sh){
-  const R={worked:null,mealPrem:0,restPrem:0,flags:[],sev:'ok',reg:0,ot:0,dt:0};
+function evaluate(sh,waiverOnFile){
+  const R={worked:null,mealPrem:0,restPrem:0,flags:[],sev:'ok'};
   if(!sh.clock_out){R.flags.push({c:'yellow',t:'Missing clock-out'});R.sev='yellow';return R}
   const meals=mealsOf(sh), mealMin=meals.reduce((a,m)=>a+mins(m[0],m[1]),0);
   const w=mins(sh.clock_in,sh.clock_out)-mealMin;R.worked=w;
-  R.reg=Math.min(w,480);R.ot=Math.max(0,Math.min(w,720)-480);R.dt=Math.max(0,w-720);
   const why=[];
   if(w>300){
-    if(!meals.length){if(!(sh.meal_answer==='waived'&&w<=360))why.push('No lunch recorded')}
+    if(!meals.length){if(!(sh.meal_answer==='waived'&&w<=360&&waiverOnFile))why.push(sh.meal_answer!=='waived'?'No lunch recorded':w>360?'Lunch skipped on a shift over 6 hours (can\u2019t be waived)':'Lunch skipped without a signed waiver on file')}
     else{const d=mins(meals[0][0],meals[0][1]);if(d<30)why.push('Short lunch ('+d+' min)');if(mins(sh.clock_in,meals[0][0])>300)why.push('Late lunch (started after 5th hour)')}
-    if(w>600&&meals.length<2&&!(sh.meal_answer==='waived'&&w<=720))why.push('No second lunch (over 10 hrs)');
+    if(w>600){
+      if(meals.length<2){if(!(w<=720&&meals.length===1&&waiverOnFile&&sh.meal_answer!=='no'))why.push('No second lunch (over 10 hrs)')}
+      else{const m2=mins(meals[1][0],meals[1][1]);if(m2<30)why.push('Short second lunch ('+m2+' min)');if(mins(sh.clock_in,meals[1][0])-mins(meals[0][0],meals[0][1])>600)why.push('Second lunch started after 10th hour')}
+    }
     if(sh.meal_answer==='no'&&!why.length)why.push('Staff reported no full lunch');
   }
   if(why.length){R.mealPrem=1;R.flags.push({c:'red',t:'Meal premium',why:why.join(' · ')})}
@@ -194,8 +197,34 @@ function evaluate(sh){
   if(sh.times_accurate===false&&!sh.edited)R.flags.push({c:'yellow',t:'Staff says times are wrong',why:'See messages from staff'});
   if(sh.edited)R.flags.push({c:'yellow',t:'Edited',why:'See change log'});
   if(sh.meal_answer==='waived'&&!R.mealPrem&&w>300)R.flags.push({c:'ok',t:'Lunch waived (6 hrs or less)'});
+  if(meals.some(m=>mins(m[0],m[1])>60))R.flags.push({c:'yellow',t:'Lunch over 1 hour',why:'Ask payroll whether a split-shift premium applies'});
   R.sev=R.flags.some(f=>f.c==='red')?'red':R.flags.some(f=>f.c==='orange')?'orange':R.flags.some(f=>f.c==='yellow')?'yellow':'ok';
   return R;
+}
+
+/* ---------- overtime: daily (8/12), weekly (40) and 7th consecutive day ---------- */
+const dowOf=iso=>new Date(iso+'T12:00:00Z').getUTCDay();
+const weekOf=iso=>addDays(iso,-((dowOf(iso)-WORKWEEK_START_DAY+7)%7));
+function payBreakdown(empShifts){
+  const days={};
+  empShifts.forEach(s=>{const R=evaluate(s);if(R.worked!=null)days[s.work_date]=(days[s.work_date]||0)+R.worked});
+  const weeks={};Object.keys(days).sort().forEach(d=>{(weeks[weekOf(d)]=weeks[weekOf(d)]||[]).push(d)});
+  const out={};
+  Object.entries(weeks).forEach(([wk,ds])=>{
+    const allSeven=ds.filter(d=>days[d]>0).length===7;let weekReg=0;
+    ds.forEach(d=>{const m=days[d];let reg,ot,dt;
+      if(allSeven&&d===addDays(wk,6)){reg=0;ot=Math.min(m,480);dt=Math.max(0,m-480)}
+      else{reg=Math.min(m,480);ot=Math.max(0,Math.min(m,720)-480);dt=Math.max(0,m-720)}
+      if(weekReg+reg>2400){const ex=weekReg+reg-2400;reg-=ex;ot+=ex}
+      weekReg+=reg;out[d]={worked:m,reg,ot,dt,seventh:allSeven&&d===addDays(wk,6)}});
+  });
+  return out;
+}
+function splitFlags(empShifts){
+  const by={},out={};empShifts.filter(s=>s.clock_out).forEach(s=>{const k=s.employee_id+'|'+s.work_date;(by[k]=by[k]||[]).push(s)});
+  Object.values(by).forEach(list=>{list.sort((a,b)=>a.clock_in.localeCompare(b.clock_in));
+    for(let i=1;i<list.length;i++)if(mins(list[i-1].clock_out,list[i].clock_in)>60)out[list[i].id]=true});
+  return out;
 }
 
 /* ---------- mode switching ---------- */
@@ -294,10 +323,10 @@ function attest(){
   const meals=mealsOf(sh), w=mins(sh.clock_in,now)-meals.reduce((a,m)=>a+mins(m[0],m[1]),0);
   const needMeal=w>300, rn=restNeeded(w), issues=[];
   if(needMeal&&meals.length){const d=mins(meals[0][0],meals[0][1]);if(d<30)issues.push('Your lunch today was '+d+' minutes. It needs to be at least 30.');if(mins(sh.clock_in,meals[0][0])>300)issues.push('Your lunch started after your 5th hour of work.')}
-  if(needMeal&&!meals.length&&w>360)issues.push('No lunch was clocked today.');
-  const names=['morning','afternoon','evening'], items=[];
+  if(needMeal&&!meals.length&&(w>360||!ST.status.meal_waiver))issues.push('No lunch was clocked today.');
+  const names=['morning','afternoon','evening','late'], items=[];
   if(needMeal&&meals.length)items.push({k:'meal',t:'I took my full 30-minute lunch break'});
-  if(needMeal&&!meals.length&&w<=360)items.push({k:'waive',t:'I chose to skip lunch today'});
+  if(needMeal&&!meals.length&&w<=360&&ST.status.meal_waiver)items.push({k:'waive',t:'I chose to skip lunch today'});
   for(let i=0;i<rn;i++)items.push({k:'rest'+i,t:rn===1?'I took my 10-minute break':'I took my '+names[i]+' 10-minute break'});
   items.push({k:'acc',t:'My clock-in and clock-out times for today are accurate'});
   layer.innerHTML=`<div class="overlay"><form class="modal" id="att"><h2>You worked ${hrs(w)} hours today</h2>
@@ -324,7 +353,7 @@ function attest(){
 }
 
 /* =============================== MANAGER =============================== */
-const M={tab:'report',period:null,exp:'summary',emps:[],shifts:[],messages:[],requests:[],leave:[],audit:[]};
+const M={tab:'report',period:null,exp:'summary',emps:[],shifts:[],messages:[],requests:[],leave:[],audit:[],split:{},pay:{}};
 document.querySelectorAll('#mtabs button').forEach(b=>b.onclick=()=>{M.tab=b.dataset.tab;mRender()});
 async function mgrStart(){
   view.innerHTML='<p class="loading">Loading…</p>';
@@ -344,10 +373,11 @@ async function fetchAll(table,cols,order){let out=[],from=0;for(;;){const {data,
 async function mLoad(){
   try{
     [M.emps,M.shifts,M.messages,M.requests,M.leave,M.audit]=await Promise.all([
-      fetchAll('employees','id,name,role,full_time,active,start_date,sick_balance_start,sick_used_year_start,vac_balance_start,created_at','name'),
+      fetchAll('employees','id,name,role,full_time,active,start_date,sick_balance_start,sick_used_year_start,vac_balance_start,meal_waiver,created_at','name').catch(()=>fetchAll('employees','id,name,role,full_time,active,start_date,sick_balance_start,sick_used_year_start,vac_balance_start,created_at','name')),
       fetchAll('shifts','*','clock_in'),fetchAll('messages','*','created_at'),fetchAll('fix_requests','*','created_at'),
       fetchAll('leave','*','leave_date'),fetchAll('audit_log','*','id')]);
   }catch(e){toast('Couldn’t load data: '+errMsg(e),true)}
+  M.split=splitFlags(M.shifts);M.pay={};M.emps.forEach(e=>{M.pay[e.id]=payBreakdown(M.shifts.filter(s=>s.employee_id===e.id))});
 }
 const empById=id=>M.emps.find(e=>e.id===id)||{name:'(unknown)'};
 const todayLA=()=>laDate(new Date());
@@ -364,7 +394,7 @@ function mReport(){
   const ps=periods();if(!M.period)M.period=ps[0].start;
   const P=ps.find(p=>p.start===M.period)||ps[0];
   const inP=M.shifts.filter(s=>s.work_date>=P.start&&s.work_date<=P.end);
-  let mp=0,rp=0,att=0;inP.forEach(s=>{const R=evaluate(s);mp+=R.mealPrem;rp+=R.restPrem;if(R.flags.some(f=>f.t==='Missing clock-out'||f.t==='Break questions unanswered'))att++});
+  let mp=0,rp=0,att=0;inP.forEach(s=>{const R=evalM(s);mp+=R.mealPrem;rp+=R.restPrem;if(R.flags.some(f=>f.t==='Missing clock-out'||f.t==='Break questions unanswered'))att++});
   const msgs=M.messages.filter(m=>m.status==='new').reverse(), pend=M.requests.filter(r=>r.status==='pending');
   const show=M.emps.filter(e=>e.active||inP.some(s=>s.employee_id===e.id));
   view.innerHTML=`<div class="stack">
@@ -394,15 +424,20 @@ function mReport(){
   $('#backup').onclick=()=>download('holistika-timeclock-backup-'+todayLA()+'.json',JSON.stringify({exported:new Date().toISOString(),employees:M.emps,shifts:M.shifts,messages:M.messages,fix_requests:M.requests,leave:M.leave,audit_log:M.audit},null,1),'application/json');
 }
 function download(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
+function evalM(s){const e=empById(s.employee_id),R=evaluate(s,!!e.meal_waiver);
+  if(M.split[s.id]){R.flags.push({c:'yellow',t:'Possible split shift',why:'More than 1 hour unpaid between shifts. Ask payroll about the split-shift premium.'});if(R.sev==='ok')R.sev='yellow'}
+  const d=(M.pay[s.employee_id]||{})[s.work_date];if(d&&d.seventh)R.flags.push({c:'ok',t:'7th day in a row (overtime rules)'});
+  return R}
+function periodPay(empId,P){const t={reg:0,ot:0,dt:0};Object.entries(M.pay[empId]||{}).forEach(([d,v])=>{if(d>=P.start&&d<=P.end){t.reg+=v.reg;t.ot+=v.ot;t.dt+=v.dt}});return t}
 function empBlock(e,rows,P){
-  let w=0,ot=0,dt=0,mp=0,rp=0;
+  let w=0,mp=0,rp=0;const pay=periodPay(e.id,P);
   const ans=a=>a==='yes'?'Yes':a==='no'?'<b>No</b>':a==='waived'?'Waived':a==='n/a'?'—':'<i>No answer</i>';
-  const trs=rows.map(s=>{const R=evaluate(s);if(R.worked!=null){w+=R.worked;ot+=R.ot;dt+=R.dt}mp+=R.mealPrem;rp+=R.restPrem;
+  const trs=rows.map(s=>{const R=evalM(s);if(R.worked!=null)w+=R.worked;mp+=R.mealPrem;rp+=R.restPrem;
     return `<tr class="day sev-${R.sev}" data-id="${s.id}" tabindex="0"><td>${dlabel(s.work_date)}</td><td class="t">${fmtT(s.clock_in)}</td><td class="t">${s.meal1_start?fmtT(s.meal1_start)+'–'+fmtT(s.meal1_end):'—'}${s.meal2_start?'<br>'+fmtT(s.meal2_start)+'–'+fmtT(s.meal2_end):''}</td><td class="t">${fmtT(s.clock_out)}</td><td class="t">${R.worked!=null?hrs(R.worked):'—'}</td><td>${ans(s.meal_answer)}</td><td>${ans(s.rest_answer)}</td><td>${R.flags.length?R.flags.map(f=>`<span class="pill ${f.c}">${f.t}</span>`).join('')+R.flags.filter(f=>f.why).map(f=>`<div class="why">${esc(f.why)}</div>`).join(''):'<span class="pill ok">Clean</span>'}</td></tr>`}).join('');
   const lv=M.leave.filter(l=>!l.voided&&l.employee_id===e.id&&l.leave_date>=P.start&&l.leave_date<=P.end);
   const sick=lv.filter(l=>l.kind==='sick').reduce((a,l)=>a+ +l.hours,0),vac=lv.filter(l=>l.kind==='vacation').reduce((a,l)=>a+ +l.hours,0);
   return `<section class="panel"><div class="emp-head"><div><h3>${esc(e.name)}</h3><span class="muted" style="font-size:13px">${esc(e.role)}${e.role?' · ':''}${e.full_time?'Full-time':'Part-time'}${e.active?'':' · inactive'}</span></div>
-  <div class="totals mono"><span>${hrs(w)} hrs</span>${ot?`<span>OT ${hrs(ot)}</span>`:''}${dt?`<span>DT ${hrs(dt)}</span>`:''}${sick?`<span>Sick ${sick}</span>`:''}${vac?`<span>Vacation ${vac}</span>`:''}${mp?`<span class="p">Meal prem ${mp}</span>`:''}${rp?`<span class="p">Rest prem ${rp}</span>`:''}<button class="btn small ghost" data-add="${e.id}">Add missed shift</button></div></div>
+  <div class="totals mono"><span>${hrs(w)} hrs</span>${pay.ot?`<span>OT ${hrs(pay.ot)}</span>`:''}${pay.dt?`<span>DT ${hrs(pay.dt)}</span>`:''}${sick?`<span>Sick ${sick}</span>`:''}${vac?`<span>Vacation ${vac}</span>`:''}${mp?`<span class="p">Meal prem ${mp}</span>`:''}${rp?`<span class="p">Rest prem ${rp}</span>`:''}<button class="btn small ghost" data-add="${e.id}">Add missed shift</button></div></div>
   ${rows.length?`<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>In</th><th>Lunch</th><th>Out</th><th>Hours</th><th>Full lunch?</th><th>10-min breaks?</th><th>Flags</th></tr></thead><tbody>${trs}</tbody></table></div>`:'<p class="muted" style="margin:0">No shifts this period.</p>'}</section>`;
 }
 function editShift(id){
@@ -438,19 +473,22 @@ function addShift(empId){
 }
 function csvRow(a){return a.map(x=>{x=String(x??'');return /[",\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x}).join(',')}
 function csvDetail(P){
-  const out=[csvRow(['Employee','Date','Clock In','Lunch Start','Lunch End','Clock Out','Hours Worked','Regular','OT','DT','Full Lunch Answer','Rest Break Answer','Meal Premium Hrs','Rest Premium Hrs','Edited','Flags'])];
-  M.shifts.filter(s=>s.work_date>=P.start&&s.work_date<=P.end).sort((a,b)=>empById(a.employee_id).name.localeCompare(empById(b.employee_id).name)||a.clock_in.localeCompare(b.clock_in)).forEach(s=>{const R=evaluate(s);
-    out.push(csvRow([empById(s.employee_id).name,s.work_date,laHM(s.clock_in),laHM(s.meal1_start),laHM(s.meal1_end),s.clock_out?laHM(s.clock_out):'MISSING',R.worked!=null?hrs(R.worked):'',hrs(R.reg),hrs(R.ot),hrs(R.dt),s.meal_answer||'no answer',s.rest_answer||'no answer',R.mealPrem,R.restPrem,s.edited?'yes':'no',R.flags.map(f=>f.t+(f.why?' ('+f.why+')':'')).join('; ')]))});
+  const out=[csvRow(['Employee','Date','Clock In','Lunch Start','Lunch End','2nd Lunch Start','2nd Lunch End','Clock Out','Shift Hours','Day Regular Hrs','Day OT Hrs','Day DT Hrs','Full Lunch Answer','Rest Break Answer','Meal Premium Hrs','Rest Premium Hrs','Edited','Flags'])];
+  const rows=M.shifts.filter(s=>s.work_date>=P.start&&s.work_date<=P.end).sort((a,b)=>empById(a.employee_id).name.localeCompare(empById(b.employee_id).name)||a.clock_in.localeCompare(b.clock_in));
+  rows.forEach((s,i)=>{const R=evalM(s),next=rows[i+1],lastOfDay=!next||next.employee_id!==s.employee_id||next.work_date!==s.work_date;
+    const d=lastOfDay?(M.pay[s.employee_id]||{})[s.work_date]:null;
+    out.push(csvRow([empById(s.employee_id).name,s.work_date,laHM(s.clock_in),laHM(s.meal1_start),laHM(s.meal1_end),laHM(s.meal2_start),laHM(s.meal2_end),s.clock_out?laHM(s.clock_out):'MISSING',R.worked!=null?hrs(R.worked):'',d?hrs(d.reg):'',d?hrs(d.ot):'',d?hrs(d.dt):'',s.meal_answer||'no answer',s.rest_answer||'no answer',R.mealPrem,R.restPrem,s.edited?'yes':'no',R.flags.map(f=>f.t+(f.why?' ('+f.why+')':'')).join('; ')]))});
   return out.join('\n');
 }
 function csvSummary(P){
-  const out=['Pay period '+P.start+' to '+P.end,csvRow(['Employee','Regular Hrs','OT Hrs','DT Hrs','Meal Premium Hrs','Rest Premium Hrs','Sick Hrs Used','Vacation Hrs Used','Missing Clock-outs'])];
+  const out=['Pay period '+P.start+' to '+P.end,csvRow(['Employee','Regular Hrs','OT Hrs (1.5x)','DT Hrs (2x)','Meal Premium Hrs','Rest Premium Hrs','Sick Hrs Used','Vacation Hrs Used','Sick Balance','Vacation Balance','Missing Clock-outs'])];
   M.emps.forEach(e=>{const sh=M.shifts.filter(s=>s.employee_id===e.id&&s.work_date>=P.start&&s.work_date<=P.end);
     const lv=M.leave.filter(l=>!l.voided&&l.employee_id===e.id&&l.leave_date>=P.start&&l.leave_date<=P.end);
-    if(!sh.length&&!lv.length)return;let reg=0,ot=0,dt=0,mp=0,rp=0,miss=0;
-    sh.forEach(s=>{const R=evaluate(s);reg+=R.reg;ot+=R.ot;dt+=R.dt;mp+=R.mealPrem;rp+=R.restPrem;if(!s.clock_out)miss++});
-    out.push(csvRow([e.name,hrs(reg),hrs(ot),hrs(dt),mp,rp,lv.filter(l=>l.kind==='sick').reduce((a,l)=>a+ +l.hours,0),lv.filter(l=>l.kind==='vacation').reduce((a,l)=>a+ +l.hours,0),miss]))});
-  out.push('','Daily overtime shown (over 8 hrs, double time over 12). Weekly overtime over 40 hrs and 7th-day rules to be confirmed by payroll.');
+    if(!sh.length&&!lv.length)return;let mp=0,rp=0,miss=0;const pay=periodPay(e.id,P),b=balances(e);
+    sh.forEach(s=>{const R=evalM(s);mp+=R.mealPrem;rp+=R.restPrem;if(!s.clock_out)miss++});
+    out.push(csvRow([e.name,hrs(pay.reg),hrs(pay.ot),hrs(pay.dt),mp,rp,lv.filter(l=>l.kind==='sick').reduce((a,l)=>a+ +l.hours,0),lv.filter(l=>l.kind==='vacation').reduce((a,l)=>a+ +l.hours,0),b.sickBal.toFixed(2),e.full_time?b.vacBal.toFixed(2):'',miss]))});
+  out.push('','Overtime: over 8 hrs a day or 40 hrs a week = 1.5x; over 12 hrs a day = 2x; 7th day in a row in a workweek = 1.5x for the first 8 hrs, 2x after.',
+    'Premiums are paid at each employee’s regular rate of pay and listed as a separate line on the pay stub. Please show the sick balance on each pay stub.');
   return out.join('\n');
 }
 
@@ -465,12 +503,13 @@ function mStaff(){
   view.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>empForm(b.dataset.edit));
 }
 function empForm(id){
-  const e=id?M.emps.find(x=>x.id===id):{name:'',role:'',full_time:false,active:true,start_date:todayLA(),sick_balance_start:0,sick_used_year_start:0,vac_balance_start:0};
+  const e=id?M.emps.find(x=>x.id===id):{name:'',role:'',full_time:false,active:true,meal_waiver:false,start_date:todayLA(),sick_balance_start:0,sick_used_year_start:0,vac_balance_start:0};
   layer.innerHTML=`<div class="overlay"><form class="modal" id="ef"><h2>${id?'Edit '+esc(e.name):'Add employee'}</h2>
   <div class="grid2" style="margin-top:12px"><label class="f">Name<input id="ef-n" value="${esc(e.name)}" required></label><label class="f">Role<input id="ef-r" value="${esc(e.role)}" placeholder="e.g. Vet assistant"></label>
   <label class="f">${id?'New PIN (leave blank to keep)':'PIN (4 to 6 digits)'}<input id="ef-p" inputmode="numeric" pattern="[0-9]{4,6}" ${id?'':'required'} autocomplete="off"></label>
   <label class="f">Start date on this app<input type="date" id="ef-s" value="${e.start_date}" required></label>
-  <label class="chk"><input type="checkbox" id="ef-ft" ${e.full_time?'checked':''}> Full-time</label><label class="chk"><input type="checkbox" id="ef-a" ${e.active?'checked':''}> Active</label></div>
+  <label class="chk"><input type="checkbox" id="ef-ft" ${e.full_time?'checked':''}> Full-time</label><label class="chk"><input type="checkbox" id="ef-a" ${e.active?'checked':''}> Active</label>
+  <label class="chk" style="grid-column:1/-1"><input type="checkbox" id="ef-mw" ${e.meal_waiver?'checked':''}> Signed meal waiver on file (lets them skip lunch on shifts of 6 hours or less)</label></div>
   <h3 style="margin-top:18px">Starting balances from PayEntry</h3><p class="sub" style="margin:2px 0 10px">As of the start date above.</p>
   <div class="grid2"><label class="f">Sick hours available<input type="number" step="0.01" min="0" id="ef-sb" value="${e.sick_balance_start}"></label>
   <label class="f">Sick hours already used this year<input type="number" step="0.01" min="0" id="ef-su" value="${e.sick_used_year_start}"></label>
@@ -478,7 +517,7 @@ function empForm(id){
   <div class="row" style="margin-top:16px"><button class="btn">${id?'Save':'Add employee'}</button><button type="button" class="btn ghost" id="cancel">Cancel</button></div></form></div>`;
   $('#cancel').onclick=()=>layer.innerHTML='';
   $('#ef').onsubmit=async ev=>{ev.preventDefault();
-    const r=await call('manager_save_employee',{p_id:id,p_name:$('#ef-n').value,p_role:$('#ef-r').value,p_full_time:$('#ef-ft').checked,p_pin:$('#ef-p').value||null,p_active:$('#ef-a').checked,p_start_date:$('#ef-s').value,p_sick_balance_start:+$('#ef-sb').value||0,p_sick_used_year_start:+$('#ef-su').value||0,p_vac_balance_start:+$('#ef-vb').value||0},id?'Saved':'Employee added');
+    const r=await call('manager_save_employee',{p_id:id,p_name:$('#ef-n').value,p_role:$('#ef-r').value,p_full_time:$('#ef-ft').checked,p_pin:$('#ef-p').value||null,p_active:$('#ef-a').checked,p_start_date:$('#ef-s').value,p_sick_balance_start:+$('#ef-sb').value||0,p_sick_used_year_start:+$('#ef-su').value||0,p_vac_balance_start:+$('#ef-vb').value||0,p_meal_waiver:$('#ef-mw').checked},id?'Saved':'Employee added');
     if(r)layer.innerHTML=''};
 }
 
